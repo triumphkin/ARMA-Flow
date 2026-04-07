@@ -7,56 +7,13 @@ import time
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Traffic Hero | AI Command Center", layout="wide", initial_sidebar_state="expanded")
 
-# --- MOCK DATA GENERATOR (Replace with your actual CSVs later) ---
+
 @st.cache_data
 def load_simulation_data():
-    """
-    Mocking the data that your core_engine.py and data_gen.py will output.
-    You will replace this function with:
-    chaos_df = pd.read_csv('baseline_results.csv')
-    smart_df = pd.read_csv('smart_results.csv')
-    """
-    np.random.seed(42)
-    time_steps = 200
-    num_cars = 30
+    chaos_df = pd.read_csv('baseline_chaos_data.csv')
+    smart_df = pd.read_csv('baseline_chaos_optimized_data.csv')
     
-    data = []
-    for t in range(time_steps):
-        for car_id in range(num_cars):
-            # Base logic: cars move forward
-            x_base = (t * 5) + (car_id * -20) 
-            
-            # Attributes
-            aggression = np.random.uniform(0, 1) if t == 0 else 0.5
-            is_ambulance = 1 if car_id == 5 else 0
-            
-            # --- SCENARIO 1: CHAOS (Unmanaged) ---
-            x_chaos = x_base
-            y_chaos = (car_id % 3) + 1 # Lanes 1, 2, 3
-            impatience = min(1.0, (t / 100.0) * (1 + aggression))
-            
-            # Simulate the bottleneck jam around x=400
-            if 350 < x_chaos < 450:
-                x_chaos -= (t * 3) # Cars stall
-                # Impatient aggressive drivers take the footpath (Lane 0)
-                if impatience > 0.8:
-                    y_chaos = 0 
-            
-            # --- SCENARIO 2: SMART (AI Managed) ---
-            x_smart = x_base * 0.8 # Slower overall, but consistent (Variable Speed Limit)
-            y_smart = (car_id % 3) + 1
-            # Batch zipper logic: smooth merge at x=400
-            if x_smart > 380:
-                y_smart = 2 # Everyone merges smoothly into lane 2
-                
-            data.append({
-                'time_step': t, 'car_id': car_id, 
-                'x_chaos': x_chaos, 'y_chaos': y_chaos,
-                'x_smart': x_smart, 'y_smart': y_smart,
-                'aggression': aggression, 'impatience': impatience, 'is_ambulance': is_ambulance
-            })
-            
-    return pd.DataFrame(data)
+    
 
 df = load_simulation_data()
 max_time = int(df['time_step'].max())

@@ -96,6 +96,7 @@ def train_and_save_model(csv_path="/home/lappy/Documents/Learnings/Winning/basel
     with open(model_path, 'wb') as f:
         pickle.dump(rf_model, f)
     print("Done! Model is ready for the dashboard.")
+    
 
 def predict_jam(current_state_dict, model_path="jam_predictor.pkl"):
     try:
@@ -107,6 +108,48 @@ def predict_jam(current_state_dict, model_path="jam_predictor.pkl"):
     state_df = pd.DataFrame([current_state_dict])
     prediction = loaded_model.predict(state_df)[0]
     return prediction
+
+def predict_jam_from_csv(csv_path, model_path="jam_predictor.pkl"):
+    """
+    Reads an entire CSV file of traffic states and predicts the time to gridlock
+    for every single row simultaneously.
+    """
+    try:
+        # 1. Wake up the AI Brain
+        with open(model_path, 'rb') as f:
+            loaded_model = pickle.load(f)
+    except FileNotFoundError:
+         return "Error: Model not trained yet."
+
+    # 2. Load the CSV
+    try:
+        df = pd.read_csv(csv_path)
+    except FileNotFoundError:
+        return f"Error: Could not find the file '{csv_path}'."
+
+    # 3. Define the exact features the AI expects (Must match training!)
+    features = [
+        'Weather_Condition', 'Hour_Of_Day', 'Hard_Braking_Count', 
+        'Global_Speed_Variance', 'Global_Avg_Speed', 'Footpath_Count', 
+        'Current_Impatience', 'Aggression_Profile', 'Compliance_Profile'
+    ]
+
+    # 4. Safety Check: Make sure the CSV actually has these columns
+    missing_cols = [col for col in features if col not in df.columns]
+    if missing_cols:
+        return f"Error: The CSV is missing these required columns -> {missing_cols}"
+
+    # 5. Filter the DataFrame to ONLY the columns the AI needs
+    X_live = df[features]
+
+    # 6. Predict the entire CSV at once (Batch Prediction)
+    predictions = loaded_model.predict(X_live)
+
+    # 7. Add the predictions as a brand new column to the DataFrame
+    df['Predicted_Seconds_To_Gridlock'] = predictions
+    
+    # Return the updated DataFrame
+    return df['Predicted_Seconds_To_Gridlock']
 
 if __name__ == "__main__":
     train_and_save_model()

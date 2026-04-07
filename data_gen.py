@@ -8,7 +8,7 @@ def run_massive_data_generation():
     
     # 50 Episodes. With 800 steps (2-hour jumps), each episode simulates ~66 days of traffic.
     # Total dataset: ~9 years worth of combined simulated traffic data.
-    total_episodes = 25 
+    total_episodes = 2
     
     print(f"Starting Massive Data Generation: {total_episodes} Episodes...")
     

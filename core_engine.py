@@ -4,6 +4,8 @@ import random
 from datetime import datetime, timedelta
 import behavior
 
+random.seed = 42
+
 class Car:
     def __init__(self, car_id, spawn_lane):
         self.id = car_id
@@ -11,6 +13,7 @@ class Car:
         self.position = 0.0 # Starts at 0 meters
         self.speed = random.uniform(15.0, 25.0) # Meters per second (~50-90 km/h)
         self.target_speed = 25.0
+        self.ambulance=0
         
         # --- HUMAN BEHAVIOR PROFILES ---
         self.aggression = random.uniform(0.0, 1.0)
@@ -34,6 +37,11 @@ class TrafficSimulation:
         self.time_step = 0
         self.data_log = []
         self.car_counter = 0
+        # --- BATCH ZIPPER STATE (The AI Brain) ---
+        self.ai_zipper_active = False  # The boolean condition!
+        self.active_merge_lane = 1     # Starts by letting Lane 1 merge
+        self.cars_merged_in_batch = 0  # Counter
+        self.batch_size = 5            # How many cars per batch
         
         # --- TIMELINE SETUP ---
         # Start at midnight on the first day
@@ -44,6 +52,12 @@ class TrafficSimulation:
             lane = random.choice([1,3])
             self.cars.append(Car(self.car_counter, lane))
             self.car_counter += 1
+            if(self.car_counter %5 ==0):
+                self.cars[-1].ambulance =1
+
+ 
+        
+
 
     def step(self):
         self.time_step += 1
@@ -195,6 +209,7 @@ class TrafficSimulation:
                 "Density_Lane2": densities[2],
                 "Density_Lane3": densities[3],
                 "Total_Throughput": throughput,
+                "Is_Ambulance": car.ambulance,
                 
                 "Seconds_To_Gridlock": target_gridlock
             }
