@@ -7,7 +7,7 @@ def calculate_impatience(current_speed, target_speed, current_impatience):
     """
     speed_ratio = current_speed / target_speed
     
-    if speed_ratio < 0.2:
+    if speed_ratio < 0.38:
         # Crawling in traffic -> Get angry fast
         return min(1.0, current_impatience + 0.05)
     elif speed_ratio > 0.6:
@@ -32,24 +32,83 @@ def decide_footpath_violation(impatience, compliance, current_lane, position, me
             
     return False
 
-def decide_lane_change(car_speed, my_lane_speed, target_lane_speed, aggression):
+def decide_target_lane(current_lane, lane_densities, aggression):
     """
-    Simplified MOBIL Model for Hackathon. 
-    Decides if a car wants to change lanes based on potential speed gain.
+    Density-based lane change model across all 3 highway lanes.
+    Returns the lane number the car should move to, or the current lane if it stays put.
     """
-    # Politeness factor: Aggressive = 0.0 (selfish), Passive = 0.5 (polite)
-    politeness = 0.5 - (aggression * 0.5) 
+    # 1. PHYSICAL CONSTRAINTS: Which lanes can we actually steer into?
+    # Lane 1 (Left) can only go to Lane 2 (Center)
+    # Lane 3 (Right) can only go to Lane 2 (Center)
+    # Lane 2 (Center) has the choice of going Left (1) or Right (3)
+    if current_lane == 1:
+        adjacent_lanes = [2]
+    elif current_lane == 3:
+        adjacent_lanes = [2]
+    else: 
+        adjacent_lanes = [1, 3]
+
+    # 2. ENVIRONMENTAL AWARENESS: Find the best adjacent lane
+    # We look at the dictionary and pick the lane with the absolute lowest number of cars
+    best_target_lane = min(adjacent_lanes, key=lambda l: lane_densities.get(l, 0))
     
-    # How much faster will I go if I switch lanes?
-    my_potential_gain = target_lane_speed - car_speed
+    my_lane_density = lane_densities.get(current_lane, 0)
+    target_lane_density = lane_densities.get(best_target_lane, 0)
+
+    # 3. THE PRESSURE GAUGE: How much emptier is that other lane?
+    density_advantage = my_lane_density - target_lane_density
     
-    # If the target lane is moving faster
-    if target_lane_speed > (my_lane_speed + 2.0):
-        # Aggressive drivers switch for a tiny gain (1.0 m/s). 
-        # Polite drivers need a bigger gap to justify the switch.
-        required_gain = 1.0 + (politeness * 5.0)
+    # If the best lane is equally crowded or worse, don't bother moving.
+    if density_advantage <= 0:
+        return current_lane
         
-        if my_potential_gain > required_gain:
-            return True
+    # 4. THE HUMAN FACTOR (Psychology Threshold)
+    # This formula scales based on the car's random aggression level (0.0 to 1.0)
+    # - A highly aggressive driver (1.0) needs only 2 fewer cars to violently switch lanes.
+    # - A passive, polite driver (0.0) needs a massive gap of 8 fewer cars to feel safe switching.
+    required_advantage = 8.0 - (aggression * 6.0) 
+    
+    # 5. THE FINAL DECISION
+    # If the relief of moving outweighs the driver's personal hesitation...
+    if density_advantage >= required_advantage:
+        return best_target_lane # SWERVE!
+        
+    # Otherwise, accept your fate and stay in the current lane.
+    return current_lane
+
+
+
+
+def calculate_variable_speed_limits(lane_densities, base_speed=25.0):
+    """
+    Calculates optimal speed limits for each lane based on current congestion.
+    Harmonizes speeds to prevent shockwaves and discourage aggressive weaving.
+    """
+    target_speeds = {1: base_speed, 2: base_speed, 3: base_speed}
+    
+    # If the road is relatively empty, don't intervene
+    total_cars = sum(lane_densities.values())
+    if total_cars < 15:
+        return target_speeds
+        
+    # 1. Apply Density Penalties
+    for lane in [1, 2, 3]:
+        density = lane_densities.get(lane, 0)
+        
+        # Every car above a safe baseline (e.g., 5 cars) drops the speed limit.
+        # This smoothly compresses the pack before they hit the bottleneck.
+        if density > 5:
+            speed_reduction = (density - 5) * 0.8  # Lose 0.8 m/s per extra car
+            target_speeds[lane] = max(8.0, base_speed - speed_reduction) # Never drop below 8 m/s
             
-    return False
+    # 2. SPEED HARMONIZATION (Crucial for safety)
+    # We do not allow adjacent lanes to have a speed limit difference of more than 5 m/s.
+    # If Lane 2 is jammed and going 10 m/s, Lanes 1 and 3 are forced down to 15 m/s max 
+    # to stop aggressive drivers from darting out of Lane 2.
+    for _ in range(2): # Run twice to smooth the edges across all 3 lanes
+        if target_speeds[1] - target_speeds[2] > 5: target_speeds[1] = target_speeds[2] + 5.0
+        if target_speeds[3] - target_speeds[2] > 5: target_speeds[3] = target_speeds[2] + 5.0
+        if target_speeds[2] - target_speeds[1] > 5: target_speeds[2] = target_speeds[1] + 5.0
+        if target_speeds[2] - target_speeds[3] > 5: target_speeds[2] = target_speeds[3] + 5.0
+        
+    return target_speeds

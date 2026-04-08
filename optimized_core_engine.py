@@ -7,7 +7,7 @@ import random
 from datetime import datetime, timedelta
 import behavior
 from ml_regression import predict_jam_from_csv, predict_jam
-random.seed = 42
+random.seed = 96
 class Car:
     def __init__(self, car_id, spawn_lane):
         self.id = car_id
@@ -16,6 +16,8 @@ class Car:
         self.speed = random.uniform(15.0, 25.0) # Meters per second (~50-90 km/h)
         self.target_speed = 25.0
         self.ambulance=0
+        self.color=0
+
         
         # --- HUMAN BEHAVIOR PROFILES ---
         self.aggression = random.uniform(0.0, 1.0)
@@ -26,8 +28,8 @@ class Car:
         self.has_finished = False
 
     def update_impatience(self):
-        if self.speed < 5.0:
-            self.impatience = min(1.0, self.impatience + 0.05)
+        if self.speed < 10.0:
+            self.impatience = min(0.3, self.impatience + 0.05)
         else:
             self.impatience = max(0.0, self.impatience - 0.01)
 
@@ -50,12 +52,25 @@ class TrafficSimulation:
         self.start_time = datetime(2026, 4, 1, 0, 0) 
 
     def spawn_cars(self, num_cars=3):
-        for _ in range(num_cars):
-            lane = random.choice([1,3])
-            self.cars.append(Car(self.car_counter, lane))
+        for i in range(num_cars):
+            lane = random.choice([1,2,3])
+            if(lane==1): 
+                color = 1
+            elif(lane==2):
+                color=2
+            else:
+                color=3
+
+            new_car = Car(self.car_counter, lane)
+            
+            # THE FIX: Stagger the cars backwards so they don't spawn inside each other!
+            new_car.position = 0.0 - (i * 25.0) 
+            new_car.color = color
+            self.cars.append(new_car)
             self.car_counter += 1
-            if(self.car_counter %5 ==0):
-                self.cars[-1].ambulance =1
+            
+            if self.car_counter % 45 == 0:
+                self.cars[-1].ambulance = 1
 
  
         
@@ -68,6 +83,35 @@ class TrafficSimulation:
         self.weather = random.choices(['Clear', 'Rain', 'Fog'], weights=[0.80, 0.15, 0.05])[0]
         
         self.cars.sort(key=lambda c: c.position, reverse=True)
+
+
+        # --- NEW: CALCULATE LIVE DENSITIES FOR VARIABLE SPEED LIMITS ---
+        active_cars = [c for c in self.cars if not c.has_finished]
+        live_densities = {1: 0, 2: 0, 3: 0}
+        for c in active_cars:
+            if c.lane in [1, 2, 3]:
+                live_densities[c.lane] += 1
+                
+        # --- THE AI BRAIN: VARIABLE SPEED LIMITS (VSL) ---
+        # If the AI detects gridlock approaching (via your predictor), activate VSL
+        if self.ai_zipper_active:
+            vsl_targets = behavior.calculate_variable_speed_limits(live_densities, base_speed=25.0)
+        else:
+            # Baseline chaos: Everyone gets to go max speed regardless of danger
+            vsl_targets = {1: 25.0, 2: 25.0, 3: 25.0}
+
+        lane_leaders = {0: None, 1: None, 2: None, 3: None}
+        
+        for car in self.cars:
+            if car.has_finished:
+                continue
+                
+            # --- APPLY OVERHEAD SPEED LIMIT TO CAR ---
+            # The car's personal target speed is now dictated by the AI overhead signs
+            if car.lane in [1, 2, 3]:
+                car.target_speed = vsl_targets[car.lane]
+
+            leader = lane_leaders[car.lane]
         lane_leaders = {0: None, 1: None, 2: None, 3: None}
         
         for car in self.cars:
@@ -93,52 +137,65 @@ class TrafficSimulation:
 
                 # --- 2. LANE MERGING LOGIC (Adaptive Batch Zipper) ---
             # The "Virtual Stop Line" is 100 meters before the merge point
+            # --- 2. LANE MERGING LOGIC (Adaptive Batch Zipper) ---
             stop_line = self.merge_point - 100 
             
-            if car.position > stop_line and car.lane in [1, 3]:
+            # Only affect cars in the outer lanes
+            if car.lane in [1, 3]:
                 
                 if self.ai_zipper_active:
-                    # --- AI MANAGED BATCH MERGING ---
-                    if car.lane == self.active_merge_lane:
-                        # 🟢 GREEN LIGHT: It is this lane's turn to merge
-                        car.lane = 2
-                        car.speed *= 0.9 # Slight slow down for safety
-                        
-                        # Increment our batch counter
-                        self.cars_merged_in_batch += 1
-                        
-                        # If 5 cars have merged, flip the traffic light!
-                        if self.cars_merged_in_batch >= self.batch_size:
-                            self.active_merge_lane = 3 if self.active_merge_lane == 1 else 1
-                            self.cars_merged_in_batch = 0
-                    else:
-                        # 🔴 RED LIGHT: Not your turn. Stop at the line!
-                        # Calculate distance to the virtual stop line
-                        dist_to_line = stop_line - car.position
-                        
-                        # If they get too close to the line while it's red, force them to stop
-                        if dist_to_line > -10 and dist_to_line < 30: 
-                            car.speed = max(0.0, car.speed - 5.0) # Hit the brakes
+                    # ==========================================
+                    # AI MANAGED BATCH MERGING
+                    # ==========================================
+                    
+                    # If the car reaches the virtual stop line...
+                    if car.position >= stop_line:
+                        if car.lane == self.active_merge_lane:
+                            # 🟢 GREEN LIGHT: It is this lane's turn to merge
+                            car.lane = 2
+                            car.speed *= 0.9 # Smooth merge
+                            
+                            self.cars_merged_in_batch += 1
+                            
+                            # If 5 cars have merged, flip the traffic light!
+                            if self.cars_merged_in_batch >= self.batch_size:
+                                self.active_merge_lane = 3 if self.active_merge_lane == 1 else 1
+                                self.cars_merged_in_batch = 0
+                        else:
+                            # 🔴 RED LIGHT: HARD WALL. 
+                            # Force the car to stay at the stop line. No tunneling allowed!
+                            car.position = stop_line 
+                            car.speed = 0.0
                             car.hard_brakes += 1
-                
-                else:
-                    # --- UNMANAGED CHAOS (Baseline) ---
-                    # Everyone tries to shove into Lane 2 at the same time
-                    car.lane = 2
-                    car.speed *= 0.8
+                            
+                    # If they are approaching a red light, make them slow down early
+                    elif car.lane != self.active_merge_lane and (stop_line - car.position) < 50:
+                        car.speed = max(0.0, car.speed - 4.0)
 
+                else:
+                    # ==========================================
+                    # UNMANAGED CHAOS (Baseline)
+                    # ==========================================
+                    # Without AI, everyone just drives until the road runs out, 
+                    # then forces their way into Lane 2 at the exact same spot.
+                    if car.position >= self.merge_point - 10:
+                        car.lane = 2
+                        car.speed *= 0.5 # Massive slow down causing shockwaves backwards
+                
             else:
 
                 if car.position > (self.merge_point - 100) and car.lane in [1, 3]:
                     car.lane = 2
                     car.speed *= 0.8 
 
+            
+
             # --- BEHAVIOR ---
             car.update_impatience()
             if behavior.decide_footpath_violation(car.impatience, car.compliance, car.lane, car.position, self.merge_point):
                 car.lane = 0 
                 car.speed = 20.0 
-                car.impatience = 0.0 
+                car.impatience = 1.0 
                 
             if car.lane == 0 and car.position >= self.merge_point:
                 car.lane = 2
@@ -231,6 +288,8 @@ class TrafficSimulation:
         if self.weather == 'Rain': weather_num = 1
         elif self.weather == 'Fog': weather_num = 2
 
+
+
         # 2. CREATE THE DICTIONARY (Must exactly match Mahi's features list)
         live_state_dict = {
             'Weather_Condition': weather_num,
@@ -241,7 +300,8 @@ class TrafficSimulation:
             'Footpath_Count': footpath_count,
             'Current_Impatience': avg_impatience,
             'Aggression_Profile': avg_aggression,
-            'Compliance_Profile': avg_compliance
+            'Compliance_Profile': avg_compliance,
+            
         }
 
         # 3. ASK THE AI FOR THE PREDICTION
@@ -287,7 +347,9 @@ class TrafficSimulation:
                 "Total_Throughput": throughput,
                 "Is_Ambulance": car.ambulance,
                 
-                "Seconds_To_Gridlock": target_gridlock
+                
+                "Seconds_To_Gridlock": target_gridlock,
+                'Color': car.color
             }
             self.data_log.append(row)
 
