@@ -92,53 +92,50 @@ class TrafficSimulation:
         for c in active_cars:
             if c.lane in [1, 2, 3]:
                 live_densities[c.lane] += 1
+                
         # --- THE AI BRAIN: VARIABLE SPEED LIMITS (VSL) ---
+        # If the AI detects gridlock approaching (via your predictor), activate VSL
         if self.ai_zipper_active:
             vsl_targets = behavior.calculate_variable_speed_limits(live_densities, base_speed=25.0)
         else:
+            # Baseline chaos: Everyone gets to go max speed regardless of danger
             vsl_targets = {1: 25.0, 2: 25.0, 3: 25.0}
 
-        # 1. MUST SORT CARS FIRST (Front to back)
-        self.cars.sort(key=lambda c: c.position, reverse=True)
         lane_leaders = {0: None, 1: None, 2: None, 3: None}
         
-        # 2. ONE SINGLE LOOP FOR EVERYTHING
         for car in self.cars:
             if car.has_finished:
                 continue
                 
             # --- APPLY OVERHEAD SPEED LIMIT TO CAR ---
-            # ONLY change their target_speed. Let the physics handle the actual speed!
+            # The car's personal target speed is now dictated by the AI overhead signs
             if car.lane in [1, 2, 3]:
                 car.target_speed = vsl_targets[car.lane]
+                car.speed = vsl_targets[car.lane]
+
+            leader = lane_leaders[car.lane]
+        lane_leaders = {0: None, 1: None, 2: None, 3: None}
+        
+        for car in self.cars:
+            if car.has_finished:
+                continue
 
             leader = lane_leaders[car.lane]
             
             # --- PHYSICS & MERGING ---
             if leader is None or (leader.position - car.position) > 50:
-                # Free road -> Accelerate toward the VSL target speed
-                acceleration = 1.0 + car.aggression
+                acceleration = 1.0 + (car.aggression)
                 car.speed = min(car.target_speed, car.speed + acceleration)
             else:
                 gap = leader.position - car.position
                 safe_gap = 10.0 - (car.aggression * 5.0) 
                 
                 if gap < safe_gap:
-                    # Too close -> Brake hard!
                     brake_force = 5.0 + (car.aggression * 2.0)
                     car.speed = max(0.0, car.speed - brake_force)
                     car.hard_brakes += 1
                 else:
-                    # Following safely -> Gradually adjust to leader's speed
-                    if car.speed < leader.speed:
-                        acceleration = 1.0 + car.aggression
-                        car.speed = min(car.speed + acceleration, leader.speed, car.target_speed)
-                    elif car.speed > leader.speed:
-                        car.speed = max(car.speed - 1.0, leader.speed)
-
-            # --- CRITICAL UPDATE ---
-            # Make this car the leader for the next car in the loop
-            lane_leaders[car.lane] = car
+                    car.speed = leader.speed
 
                 # --- 2. LANE MERGING LOGIC (Adaptive Batch Zipper) ---
             # The "Virtual Stop Line" is 100 meters before the merge point
