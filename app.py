@@ -65,6 +65,17 @@ col4.metric("System AI Status", "ACTIVE" if seconds_to_gridlock <= 120 else "MON
 
 st.divider()
 
+# --- DYNAMIC BATCH ZIPPER LOGIC ---
+# This forces the traffic lights to alternate dynamically based on the time slider,
+# creating a visual "zipper" effect regardless of what is hardcoded in the CSV.
+
+zipper_interval = 5  # The lights will swap every 5 time steps. Adjust this number to make it faster/slower.
+
+if time_step > 0:
+    current_active_lane = 1 if (time_step // zipper_interval) % 2 == 0 else 3
+else:
+    current_active_lane = 1 # Start with Lane 1 green at step 0
+
 # --- PLOTTING LOGIC ---
 def draw_highway_map(data, title):
     fig = go.Figure()
@@ -142,7 +153,8 @@ def draw_highway_map(data, title):
 # --- PLOTTING LOGIC ---
 
 # --- PLOTTING LOGIC ---
-def draw_highway_map1(data, title, active_merge_lane=None):
+# --- PLOTTING LOGIC ---
+def draw_highway_map1(data, title, active_merge_lane=None, seconds_to_gridlock=300):
     fig = go.Figure()
     
     # 1. Draw the Road Lines
@@ -152,7 +164,22 @@ def draw_highway_map1(data, title, active_merge_lane=None):
     fig.add_hline(y=1.5, line_dash="dash", line_color="gray") 
     fig.add_hline(y=2.5, line_dash="dash", line_color="gray") 
     
+    # Original Merge Zone
     fig.add_vrect(x0=700, x1=820, fillcolor="red", opacity=0.1, layer="below", line_width=0, annotation_text="Merge Zone") 
+
+    # --- NEW: Gridlock Warning Area ---
+    # Shows a translucent area just before the bottleneck when gridlock is imminent
+    if seconds_to_gridlock < 10:
+        fig.add_vrect(
+            x0=500, x1=700, 
+            fillcolor="orange", 
+            opacity=0.25, 
+            layer="below", 
+            line_width=0, 
+            annotation_text="⚠️ Gridlock Forming", 
+            annotation_position="top left",
+            annotation_font=dict(color="orange", size=14)
+        )
 
     # 2. Draw the Cars FIRST (so they stay underneath the traffic lights)
     if not data.empty:
@@ -208,24 +235,20 @@ def draw_highway_map1(data, title, active_merge_lane=None):
 
     # 3. Draw Traffic Lights LAST (so they render on top of everything)
     if active_merge_lane is not None:
-        # Safely convert to integer to prevent string comparison bugs
         try:
             lane_val = int(float(active_merge_lane))
         except:
-            lane_val = 1 # Safe fallback
+            lane_val = 1 
 
-        # Logic: If lane 1 is active (1), it gets Green, Lane 3 gets Red. 
         lane_1_color = "#00FF00" if lane_val == 1 else "#FF0000"
         lane_3_color = "#00FF00" if lane_val == 3 else "#FF0000"
         
-        # Add light for Lane 1 (y=1) right before the merge zone (x=680)
         fig.add_trace(go.Scatter(
             x=[980], y=[1], mode='markers',
             marker=dict(color=lane_1_color, size=24, symbol='circle', line=dict(color='white', width=3)),
             hoverinfo='text', text=['Lane 1 Signal'], showlegend=False
         ))
         
-        # Add light for Lane 3 (y=3) right before the merge zone (x=680)
         fig.add_trace(go.Scatter(
             x=[980], y=[3], mode='markers',
             marker=dict(color=lane_3_color, size=24, symbol='circle', line=dict(color='white', width=3)),
@@ -243,7 +266,7 @@ def draw_highway_map1(data, title, active_merge_lane=None):
         font=dict(color="white"),
         showlegend=False
     )
-    return fig    
+    return fig
 
 
 # --- SIMULATION 1: UNMANAGED CHAOS ---
@@ -309,7 +332,13 @@ else:
     current_active_lane = 1 if (time_step // 20) % 2 == 0 else 3
 
 # Notice we are now passing active_merge_lane=current_active_lane here!
-fig_smart = draw_highway_map1(current_smart, "", active_merge_lane=current_active_lane)
+# Pass seconds_to_gridlock into the function to trigger the warning area
+fig_smart = draw_highway_map1(
+    current_smart, 
+    "", 
+    active_merge_lane=current_active_lane, 
+    seconds_to_gridlock=seconds_to_gridlock
+)
 st.plotly_chart(fig_smart, use_container_width=True)
 st.divider()
 

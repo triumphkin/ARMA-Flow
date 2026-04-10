@@ -1,5 +1,3 @@
-# lane  speed
-# zipper
 
 import numpy as np
 import pandas as pd
@@ -111,7 +109,7 @@ class TrafficSimulation:
             # The car's personal target speed is now dictated by the AI overhead signs
             if car.lane in [1, 2, 3]:
                 car.target_speed = vsl_targets[car.lane]
-                car.speed = vsl_targets[car.lane]
+                # car.speed = vsl_targets[car.lane]
 
             leader = lane_leaders[car.lane]
         lane_leaders = {0: None, 1: None, 2: None, 3: None}
@@ -191,7 +189,7 @@ class TrafficSimulation:
                     car.speed *= 0.8 
 
             # --- BEHAVIOR ---
-            df=pd.read_csv('Challan_list.csv')
+            df=pd.read_csv('ARMA-Flow-main/Challan_list.csv')
             car.impatience = behavior.calculate_impatience(car.speed,car.target_speed,car.impatience)
             if behavior.decide_footpath_violation_challan(car.impatience, car.compliance, car.lane, car.position, self.merge_point, car.id, df):
                 car.lane = 0 
@@ -347,7 +345,7 @@ class TrafficSimulation:
                 "Density_Lane3": densities[3],
                 "Total_Throughput": throughput,
                 "Is_Ambulance": car.ambulance,
-                "active_merge_lane": self.active_merge_lane,
+              "active_merge_lane": self.active_merge_lane ,
                 
                 "Seconds_To_Gridlock": target_gridlock,
                 'Color': car.color
